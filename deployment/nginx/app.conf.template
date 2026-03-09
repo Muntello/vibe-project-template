@@ -1,0 +1,72 @@
+# {{PROJECT_NAME}} — Nginx Reverse Proxy Configuration
+# Copy to: /etc/nginx/sites-available/{{PROJECT_NAME}}
+# Enable: sudo ln -sf /etc/nginx/sites-available/{{PROJECT_NAME}} /etc/nginx/sites-enabled/
+# Test: sudo nginx -t
+# Reload: sudo systemctl reload nginx
+#
+# Adapt upstream for your stack:
+#   Unix socket: server unix:{{APP_PATH}}/app.sock fail_timeout=0;
+#   TCP port:    server 127.0.0.1:{{APP_PORT}} fail_timeout=0;
+
+upstream {{PROJECT_NAME}}_upstream {
+    server 127.0.0.1:{{APP_PORT}} fail_timeout=0;
+}
+
+# Redirect HTTP to HTTPS
+server {
+    listen 80;
+    server_name {{DOMAIN}};
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name {{DOMAIN}};
+
+    # SSL (managed by certbot — paths updated automatically)
+    ssl_certificate /etc/letsencrypt/live/{{DOMAIN}}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{DOMAIN}}/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # Security headers
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+    add_header X-Frame-Options DENY always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Static files (30 days cache) — uncomment if serving static via nginx
+    # location /static/ {
+    #     alias {{APP_PATH}}/static/;
+    #     expires 30d;
+    #     add_header Cache-Control "public, immutable";
+    # }
+
+    # Application
+    location / {
+        proxy_pass http://{{PROJECT_NAME}}_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_redirect off;
+
+        # WebSocket support — uncomment if needed
+        # proxy_http_version 1.1;
+        # proxy_set_header Upgrade $http_upgrade;
+        # proxy_set_header Connection "upgrade";
+
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 120s;
+    }
+
+    # Logging
+    access_log /var/log/nginx/{{NGINX_LOG_PREFIX}}-access.log;
+    error_log /var/log/nginx/{{NGINX_LOG_PREFIX}}-error.log;
+
+    # Max upload size
+    client_max_body_size 10M;
+}

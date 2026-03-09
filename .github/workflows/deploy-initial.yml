@@ -1,0 +1,41 @@
+# Initial Production Deployment
+# Trigger: Manual only (workflow_dispatch)
+# Purpose: First-time server setup
+
+name: "Deploy: Initial Setup"
+
+on:
+  workflow_dispatch:
+    inputs:
+      db_password:
+        description: "PostgreSQL password (32+ chars)"
+        required: true
+        type: string
+      admin_username:
+        description: "Django superuser username"
+        required: true
+        type: string
+      admin_email:
+        description: "Django superuser email"
+        required: true
+        type: string
+      admin_password:
+        description: "Django superuser password (12+ chars)"
+        required: true
+        type: string
+
+jobs:
+  deploy-initial:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Production
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            # Customize the steps below for your project.
+            # See docs/DEPLOYMENT_GUIDE.md for full instructions.
+            echo "Initial deployment — customize this workflow for your project"

@@ -1,0 +1,29 @@
+# Automated Code Update Deployment
+# Trigger: Push to main (excluding docs-only) or manual
+
+name: "Deploy: Code Update"
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "*.md"
+      - "docs/**"
+      - ".github/**"
+  workflow_dispatch:
+
+jobs:
+  deploy-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy Update
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            # Customize the steps below for your project.
+            # See docs/DEPLOYMENT_GUIDE.md for full instructions.
+            echo "Code update deployment — customize this workflow for your project"

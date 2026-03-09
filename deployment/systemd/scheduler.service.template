@@ -1,0 +1,23 @@
+# {{PROJECT_NAME}} — Task Scheduler
+# Copy to: /etc/systemd/system/{{SCHEDULER_SERVICE}}.service
+#
+# Adapt ExecStart for your stack:
+#   Celery Beat:  /path/venv/bin/celery -A project beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+#   node-cron:    /usr/bin/node /path/scheduler.js
+#   Custom:       /path/app-binary scheduler
+
+[Unit]
+Description={{PROJECT_NAME}} Task Scheduler
+After=network.target
+
+[Service]
+User={{DEPLOY_USER}}
+Group={{DEPLOY_USER}}
+WorkingDirectory={{APP_PATH}}
+EnvironmentFile={{APP_PATH}}/.env
+ExecStart={{APP_PATH}}/start-scheduler.sh
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target

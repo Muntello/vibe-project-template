@@ -1,0 +1,31 @@
+# {{PROJECT_NAME}} — Application Server
+# Copy to: /etc/systemd/system/{{SERVICE_NAME}}.service
+# Enable: sudo systemctl enable {{SERVICE_NAME}}
+#
+# Adapt ExecStart for your stack:
+#   Python/Gunicorn: /path/venv/bin/gunicorn --workers 3 --bind unix:app.sock project.wsgi
+#   Python/Uvicorn:  /path/venv/bin/uvicorn project.main:app --host 0.0.0.0 --port 8000
+#   Node.js:         /usr/bin/node /path/server.js
+#   Go:              /path/app-binary
+#   Rust:            /path/target/release/app-binary
+
+[Unit]
+Description={{PROJECT_NAME}} Application Server
+After=network.target
+# Add database/cache dependencies as needed:
+# Requires=postgresql.service
+# After=postgresql.service redis-server.service
+
+[Service]
+User={{DEPLOY_USER}}
+Group={{DEPLOY_USER}}
+WorkingDirectory={{APP_PATH}}
+EnvironmentFile={{APP_PATH}}/.env
+ExecStart={{APP_PATH}}/start.sh
+Restart=on-failure
+RestartSec=5s
+# Increase file descriptor limit for high-concurrency apps
+# LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

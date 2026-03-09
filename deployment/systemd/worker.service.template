@@ -1,0 +1,27 @@
+# {{PROJECT_NAME}} — Background Worker
+# Copy to: /etc/systemd/system/{{WORKER_SERVICE}}.service
+#
+# Adapt ExecStart for your stack:
+#   Celery:    /path/venv/bin/celery -A project worker -l info --concurrency=4
+#   BullMQ:    /usr/bin/node /path/worker.js
+#   Sidekiq:   /path/bin/sidekiq -C config/sidekiq.yml
+#   Custom:    /path/app-binary worker
+
+[Unit]
+Description={{PROJECT_NAME}} Background Worker
+After=network.target
+# Add broker/database dependencies:
+# After=redis-server.service postgresql.service
+
+[Service]
+User={{DEPLOY_USER}}
+Group={{DEPLOY_USER}}
+WorkingDirectory={{APP_PATH}}
+EnvironmentFile={{APP_PATH}}/.env
+ExecStart={{APP_PATH}}/start-worker.sh
+Restart=on-failure
+RestartSec=10s
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
