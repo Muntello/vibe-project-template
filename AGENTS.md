@@ -74,6 +74,22 @@ When adding integrations with external services, match production patterns:
 
 ---
 
+## Working Principles
+
+The rules above are procedural ("do X"). These are judgment principles — they govern the cases the
+rules don't spell out, and each gives a checkable test, not a slogan:
+
+1. **Docs that drift from code are worse than no docs** — wrong docs actively mislead. A change
+   isn't done until the docs it affects are fixed (or deleted). Documentation is part of the
+   change, not a follow-up.
+2. **"Done" means verified by a real request — not "code written."** Exercise the change against
+   the running system (an HTTP call, a query, a real webhook) and see the expected result. "It
+   should work" and "the command didn't error" are not done.
+3. **When unsure, ask — don't assume.** A wrong assumption baked silently into code or config costs
+   far more than a question. If a requirement, name, or contract is ambiguous, surface it and wait.
+
+---
+
 ## Documentation Maintenance (MANDATORY)
 
 After ANY code change, update the relevant documentation:
