@@ -97,11 +97,16 @@ After ANY code change, update the relevant documentation:
 | Change Type | Update These Files |
 |-------------|-------------------|
 | Schema / data model changes | Relevant data model docs |
+| Architecture / module-boundary changes | `docs/ARCHITECTURE.md` + add an ADR in `docs/decisions/` |
 | API endpoint changes | `docs/API_REFERENCE.md` |
 | New environment variables | App config + `.env.example` + `docs/ENV_VARIABLES.md` |
 | Background task changes | `docs/BACKGROUND_TASKS.md` |
 | Deployment changes | `docs/DEPLOYMENT_GUIDE.md` |
 | Any change | `CHANGELOG.md` + "Latest Updates" section below |
+
+> **Per-iteration specs, plans, and checkpoints live in the gitignored `.context/`, not in the
+> repo.** The committed docs describe what the system *is*; `.context/` holds the working notes for
+> how it's being changed right now.
 
 ---
 
@@ -111,6 +116,8 @@ After ANY code change, update the relevant documentation:
 |----------|---------|
 | `AGENTS.md` | Master agent instructions (this file) |
 | `README.md` | Project overview, setup, architecture |
+| `docs/ARCHITECTURE.md` | Living system specification (what it does and is made of) |
+| `docs/decisions/` | Architecture Decision Records — the "why" behind decisions |
 | `CHANGELOG.md` | Complete change history |
 | `.env.example` | Environment variables template |
 | `docs/ENV_VARIABLES.md` | Authoritative env vars reference |
