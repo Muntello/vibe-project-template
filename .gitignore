@@ -61,3 +61,6 @@ coverage/
 *.key
 credentials.json
 service-account.json
+
+# Agent workspace (per-iteration specs, plans, checkpoints - not committed)
+.context/
