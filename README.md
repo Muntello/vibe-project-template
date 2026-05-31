@@ -66,6 +66,10 @@ Search and replace all `{{PLACEHOLDER}}` values across the project:
 │       ├── worker.service.template       # Background worker
 │       └── scheduler.service.template    # Task scheduler
 └── docs/
+    ├── ARCHITECTURE.md                   # Living system specification
+    ├── decisions/                        # Architecture Decision Records (ADRs)
+    │   ├── README.md                     # ADR convention
+    │   └── 0000-adr-template.md          # Copy-me ADR template
     ├── AGENT_SERVER_ACCESS.md            # Diagnostic vs Investigation mode
     ├── API_REFERENCE.md                  # API documentation
     ├── BACKGROUND_TASKS.md               # Task queue / scheduler guide
@@ -99,6 +103,14 @@ See `docs/AGENT_SERVER_ACCESS.md` and `docs/DIAG_USER_SETUP.md`.
 #### Documentation as Code
 
 All documentation is living — updated with every code change. `AGENTS.md` is the single source of truth for AI agents, propagated via symlinks to `CLAUDE.md` and `GEMINI.md`.
+
+Three documents play distinct roles, and keeping them distinct keeps each one clean:
+
+- **`README.md`** — a concise overview that links out. Not a kitchen sink.
+- **`docs/ARCHITECTURE.md`** — the living specification: what the system *is* and is made of.
+- **`docs/decisions/`** — ADRs recording *why* significant decisions were made, so the spec and README don't carry that weight.
+
+Per-iteration specs, plans, and checkpoints live in the gitignored `.context/` directory, never in the repo.
 
 ---
 
