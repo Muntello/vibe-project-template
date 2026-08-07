@@ -62,15 +62,8 @@ Never assume UTC unless the project explicitly uses it.
 
 ### 6. Application Startup
 
-New features MUST NOT break application startup or core functionality. Always verify the app starts correctly after changes.
-
-### 7. External Service Dependencies
-
-When adding integrations with external services, match production patterns:
-- Authentication method (API keys, OAuth, HMAC)
-- Port and protocol requirements
-- Rate limiting configuration
-- Error handling and retry logic
+Verify the app still starts after every change. A feature that works in isolation and breaks
+boot is worse than one that was never added.
 
 ---
 
@@ -102,7 +95,7 @@ After ANY code change, update the relevant documentation:
 | New environment variables | App config + `.env.example` + `docs/ENV_VARIABLES.md` |
 | Background task changes | `docs/BACKGROUND_TASKS.md` |
 | Deployment changes | `docs/DEPLOYMENT_GUIDE.md` |
-| Any change | `CHANGELOG.md` + "Latest Updates" section below |
+| Any change | `CHANGELOG.md` |
 
 > **Per-iteration specs, plans, and checkpoints live in the gitignored `.context/`, not in the
 > repo.** The committed docs describe what the system *is*; `.context/` holds the working notes for
@@ -114,7 +107,8 @@ After ANY code change, update the relevant documentation:
 
 | Document | Purpose |
 |----------|---------|
-| `AGENTS.md` | Master agent instructions (this file) |
+| `AGENTS.md` | Master agent instructions, always-on (this file) |
+| `.claude/skills/` | On-demand agent knowledge — catalogues, runbooks, subsystem mechanics |
 | `README.md` | Project overview, setup, architecture |
 | `docs/ARCHITECTURE.md` | Living system specification (what it does and is made of) |
 | `docs/decisions/` | Architecture Decision Records — the "why" behind decisions |
@@ -228,45 +222,53 @@ Two access modes exist for production servers. See `docs/AGENT_SERVER_ACCESS.md`
 
 ---
 
-## Operations Quick Reference
+## Operations
 
-### Health Check
-```bash
-# Application health
-curl -s https://{{DOMAIN}}/health | python3 -m json.tool
+Health checks, service status, log locations and disk checks — `docs/PRODUCTION_OPERATIONS.md`.
+Known issues and their fixes — `docs/COMMON_PITFALLS.md`.
 
-# Service status (systemd)
-systemctl status {{SERVICE_NAME}} --no-pager
-
-# Service status (Docker)
-docker compose ps
-
-# Disk usage
-df -h /
-```
-
-### Common Troubleshooting
-
-See `docs/COMMON_PITFALLS.md` for documented issues and solutions.
-
-### Log Locations
-
-```bash
-# Application logs
-{{LOG_PATH}}/app.log              # Application errors
-{{LOG_PATH}}/worker.log           # Background task execution
-
-# System logs (systemd)
-journalctl -u {{SERVICE_NAME}} -n 100 --no-pager
-
-# Container logs (Docker)
-docker compose logs --tail=100 {{SERVICE_NAME}}
-```
+Deliberately not duplicated here: these are commands you reach for during an incident, not
+facts you need on every turn. Once the project has real runbooks, they belong in
+`.claude/skills/` so they load with the task that needs them.
 
 ---
 
-## Latest Updates
+## What belongs in this file
 
-<!-- Keep the 3 most recent entries here. Full history in CHANGELOG.md -->
+Everything here is loaded into **every turn of every session**, forever. That budget is the
+scarce resource, so this file earns its size by holding only what is true regardless of the
+task: what the project is, the always-on rules, the non-obvious gotchas with their reasons,
+and pointers to where the rest lives.
 
-1. **{{DATE}}** — Initial project setup
+Everything else goes in `.claude/skills/`, which the agent loads **on demand**. Only a skill's
+one-line `description` costs context until something matches it. See
+[`.claude/skills/README.md`](.claude/skills/README.md).
+
+**Tripwire: if this file passes ~10 KB, something in it is a skill.** Left alone, an agent file
+only grows — every incident and integration gets appended, nothing is ever removed, and the
+result is a 40–80 KB file where the useful 5 KB is buried. Measure by section; the offender is
+usually one heading at a third of the total.
+
+As shipped, this template sits *at* that ceiling, so a new project starts with no headroom.
+That is deliberate: the first real edit should be **deleting** — the stack you don't use, the
+access model you don't have, the tables you won't fill in. Adding project specifics on top of
+the full template is how the 40 KB version begins.
+
+Move out: anything shaped "here are N similar subsystems" (integrations, providers, accounts,
+environments) — only one is ever relevant at a time. And any procedure that fires on a task
+rather than on every turn: diagnostic protocols, release checklists, review checklists.
+
+Three things that must never go in this file or any skill, because each one goes wrong
+silently and confidently:
+
+- **Line numbers.** `handlers.py:88` is wrong by the next refactor and there is no signal when
+  it breaks. Name the function or the file; let the agent grep.
+- **Business data copied from code.** Prices, plans, discount codes, feature flags, endpoint
+  inventories. The code is the source of truth; a copy diverges within weeks and then answers
+  confidently with last quarter's numbers.
+- **Status markers and plans.** "Phase 2 in progress", unticked checklists, "current
+  status". They are true for a week and misleading for years. Per-iteration notes belong in the
+  gitignored `.context/`; finished history belongs in `CHANGELOG.md`.
+
+If a rule here contradicts the code, the code wins — say so and fix this file rather than
+working around it.
