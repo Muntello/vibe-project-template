@@ -21,3 +21,11 @@ Format: `## [YYYY-MM-DD] Summary` with bullet points for details.
 - Agent instructions configured (AGENTS.md)
 - Documentation templates added
 - CI/CD workflows configured
+
+## [2026-08-07] Progressive Disclosure for Agent Knowledge
+
+- Added `.claude/skills/` with a `README.md` (when a skill is warranted, where it belongs, how to size it) and a copy-me `_template/SKILL.md`. The template previously had only an always-on layer, so every project seeded from it grew its `AGENTS.md` monotonically.
+- `AGENTS.md`: new "What belongs in this file" section with a ~10 KB tripwire, and the three things that must never be written into an agent file — line numbers, business data copied from code, and status markers.
+- Removed the "Latest Updates" section and the documentation-maintenance row that regrew it. It duplicated `CHANGELOG.md`.
+- Replaced the "Operations Quick Reference" command dump with pointers to `docs/PRODUCTION_OPERATIONS.md` and `docs/COMMON_PITFALLS.md`. It also used a `{{LOG_PATH}}` placeholder that `README.md` never defined — the real one is `{{APP_LOG_PATH}}`.
+- Dropped production rule 7 ("External Service Dependencies"), which restated general engineering practice.

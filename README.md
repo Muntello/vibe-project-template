@@ -48,9 +48,12 @@ Search and replace all `{{PLACEHOLDER}}` values across the project:
 ### 2. Project Structure
 
 ```
-├── AGENTS.md                             # Master agent instructions
+├── AGENTS.md                             # Master agent instructions (always-on)
 ├── CLAUDE.md -> AGENTS.md                # Symlink for Claude Code
 ├── GEMINI.md -> AGENTS.md                # Symlink for Gemini / Cursor
+├── .claude/skills/                       # On-demand agent knowledge
+│   ├── README.md                         # When to create a skill, and where it belongs
+│   └── _template/SKILL.md                # Copy-me skill template
 ├── CHANGELOG.md                          # Change history
 ├── README.md                             # This file
 ├── .env.example                          # Environment variables template
@@ -100,9 +103,22 @@ See `docs/AGENT_SERVER_ACCESS.md` and `docs/DIAG_USER_SETUP.md`.
 | 2 | Database / config store | Business logic, feature flags |
 | 3 | Runtime | One-time overrides, CLI flags |
 
+#### Two Layers of Agent Knowledge
+
+`AGENTS.md` is **always-on**: loaded into every turn of every session, propagated via symlinks
+to `CLAUDE.md` and `GEMINI.md`. It holds what is true regardless of the task.
+
+`.claude/skills/` is **on-demand**: only a skill's one-line description costs context until a
+task matches it, at which point the full body loads. Catalogues, runbooks and subsystem
+mechanics belong there.
+
+Keeping the split honest is what stops the agent file from growing without limit — an agent
+file only ever accumulates unless something says where the rest goes. If `AGENTS.md` passes
+~10 KB, something in it is a skill. See [`.claude/skills/README.md`](.claude/skills/README.md).
+
 #### Documentation as Code
 
-All documentation is living — updated with every code change. `AGENTS.md` is the single source of truth for AI agents, propagated via symlinks to `CLAUDE.md` and `GEMINI.md`.
+All documentation is living — updated with every code change.
 
 Three documents play distinct roles, and keeping them distinct keeps each one clean:
 
@@ -125,4 +141,5 @@ Per-iteration specs, plans, and checkpoints live in the gitignored `.context/` d
 - [ ] Run diagnostic user setup (`docs/DIAG_USER_SETUP.md`)
 - [ ] Customize deployment workflows
 - [ ] Delete files not relevant to your stack
+- [ ] Delete the `AGENTS.md` sections that don't apply — it ships at its own ~10 KB ceiling
 - [ ] Remove this checklist
