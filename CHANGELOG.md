@@ -8,7 +8,7 @@ Format: `## [YYYY-MM-DD] Summary` with bullet points for details.
 
 ## [2026-11-24] Bounded production reads and credential rules
 
-- `docs/DIAG_USER_SETUP.md`: server-side limits for the read-only role (PostgreSQL, MySQL, ClickHouse) and a root-owned `diag-sql` wrapper that applies them per query and refuses table-scanning shapes.
+- `docs/DIAG_USER_SETUP.md`: PostgreSQL diagnostic reads use a single-statement dispatcher, a separate OS identity and an explicit database allowlist. Includes setup guidance for MySQL and ClickHouse role limits.
 - `docs/AGENT_SERVER_ACCESS.md`: queries go through `diag-sql`; query rules; an approved production change covers only the steps named.
 - `AGENTS.md`: rules 7 (production database reads) and 8 (credentials); the approval scope in rule 1. Server Access and Key Integrations compacted to stay near the size tripwire.
 - `agent-defaults/AGENTS.md`: check that a fix solved the problem; report out-of-scope defects instead of fixing them; no credential searches.
