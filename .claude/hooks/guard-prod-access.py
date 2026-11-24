@@ -8,10 +8,13 @@
 # 2. Credentials: refuses listings of password-manager vaults and items, of the SSH agent's keys, and reads of the
 #    macOS keychain. An agent uses the access it was given and asks the user for anything else.
 #
+# The command is checked twice: as written, and with shell quoting removed (so `'ps''ql'` or
+# `-h localhost'.example.com'` are seen the way the shell runs them). Host values are parsed and compared whole.
 # This is a guard against mistakes, not a security boundary: a command hidden in a script the agent wrote is not
 # seen. Exit 2 blocks the command and returns the message to the model; input it cannot parse is let through.
 import json
 import re
+import shlex
 import sys
 
 CLIENTS = (r"(psql|pg_dump|pg_dumpall|pg_restore|clickhouse-client|clickhouse\s+client|mysql|mysqldump|mariadb"
@@ -19,15 +22,13 @@ CLIENTS = (r"(psql|pg_dump|pg_dumpall|pg_restore|clickhouse-client|clickhouse\s+
 SSH = re.compile(r"(^|[\s;&|(`$'\"/])(sudo\s+(-\S+\s+)*)?(ssh|mosh|autossh)\s", re.I)
 CLIENT = re.compile(r"(^|[\s;&|(`'\"/])" + CLIENTS + r"(\s|$|['\";|&)])", re.I)
 
-# Host values are parsed and compared whole, so "localhost.example.com" is remote, and every host in a comma
-# list (libpq allows "localhost:5432,db.example.com") must be local.
-LOCAL_HOSTS = {"", "localhost", "127.0.0.1", "::1"}
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
 def _host_of(part):
-    part = part.strip().strip("'\"")
+    part = part.strip()
     if part.startswith("/"):
-        return ""  # a unix socket directory
+        return "localhost"  # a unix socket directory
     if part.startswith("["):
         return part[1:part.find("]")].lower() if "]" in part else part.lower()
     if part.count(":") == 1:
@@ -35,27 +36,42 @@ def _host_of(part):
     return part.lower()
 
 
-def any_remote(value):
+def any_remote(value, empty_is_local=False):
+    """True when any host of a value (libpq allows a comma list) is not local; an empty host counts as remote
+    unless the caller knows it means the default local socket."""
+    if value == "" and empty_is_local:
+        return False
     return any(_host_of(p) not in LOCAL_HOSTS for p in value.split(","))
 
 
-FLAG_HOST = re.compile(r"(^|[\s;&|(/])" + CLIENTS + r"\b[^;&|\n]*?(\s-h\s*|\s--host[=\s]+)['\"]?(?P<h>[^\s'\";|&)]*)", re.I)
-URL_AUTH = re.compile(r"(postgres(ql)?|clickhouse|mysql|mongodb(\+srv)?|redis)://(?P<a>[^\s/?#'\"]*)", re.I)
-KEYWORD_HOST = re.compile(r"\bhost\s*=\s*['\"]?(?P<h>[^\s'\";|&)]+)", re.I)
-ENV_HOST = re.compile(r"\b(PGHOST|CLICKHOUSE_HOST|MYSQL_HOST)=['\"]?(?P<h>[^\s'\";|&)]*)", re.I)
+# each client invocation up to the next ; & | or newline, then EVERY host flag in it (the client uses the last one)
+CLIENT_SEGMENT = re.compile(r"(^|[\s;&|(/])" + CLIENTS + r"\b(?P<s>[^\n]*)", re.I)  # to the end of the line
+FLAG_HOST = re.compile(r"\s(-[A-Za-z]*h|--ho(?:st?)?=?)\s*['\"]?(?P<h>[^\s'\";&|()]*)")  # -h, bundled -Xh, --ho/--hos/--host
+URL_AUTH = re.compile(r"(postgres(ql)?|clickhouse|mysql|mongodb(\+srv)?|redis)://(?P<a>[^\s/'\"]*)", re.I)
+KEYWORD_HOST = re.compile(r"\bhost(addr)?\s*=\s*['\"]?(?P<h>[^\s'\";&|()]*)", re.I)
+ENV_HOST = re.compile(r"\b(PGHOST|PGHOSTADDR|CLICKHOUSE_HOST|MYSQL_HOST)=['\"]?(?P<h>[^\s'\";&|()]*)", re.I)
 REMOTE_DOCKER = re.compile(r"(DOCKER_HOST=|docker\s+(-H|--host|--context|context\s+use))", re.I)
 
 
+def _url_remote(authority):
+    # libpq ends the authority at "/" only, other clients also at "?" or "#": check the host both ways
+    libpq = re.split(r"[?#]", authority.rsplit("@", 1)[-1], maxsplit=1)[0]
+    short = re.split(r"[?#]", authority, maxsplit=1)[0]
+    other = short.rsplit("@", 1)[-1]
+    return any_remote(libpq, empty_is_local=(authority == "")) or any_remote(other, empty_is_local=(short == ""))
+
+
 def remote_flag_or_url(cmd):
-    if any(any_remote(m.group("h")) for m in FLAG_HOST.finditer(cmd)):
-        return True
-    # the host follows the LAST "@" of the authority
-    return any(any_remote(m.group("a").rsplit("@", 1)[-1]) for m in URL_AUTH.finditer(cmd))
+    for seg in CLIENT_SEGMENT.finditer(cmd):
+        if any(any_remote(m.group("h")) for m in FLAG_HOST.finditer(seg.group("s"))):
+            return True
+    return any(_url_remote(m.group("a")) for m in URL_AUTH.finditer(cmd))
 
 
 def remote_keyword_or_env(cmd):
     return any(any_remote(m.group("h")) for m in KEYWORD_HOST.finditer(cmd)) or \
         any(any_remote(m.group("h")) for m in ENV_HOST.finditer(cmd))
+
 
 B = r"(^|[\s;&|(`$'\"/])"
 OBJECTS = r"(vault|vaults|item|items|account|accounts|document|documents|user|users|group|groups)"
@@ -75,7 +91,19 @@ CRED_MSG = ("Blocked by .claude/hooks/guard-prod-access.py: %s. Do not search fo
             "editor tool instead.\n")
 
 
-def verdict(cmd):
+def unquoted(cmd):
+    """The command with shell quoting removed and quoted pieces joined, words separated by single spaces.
+    None when the quoting cannot be parsed."""
+    try:
+        lex = shlex.shlex(cmd, posix=True, punctuation_chars=";&|()")
+        lex.whitespace_split = True
+        lex.commenters = ""  # bash comments only start a word; keep every word, accept false positives
+        return " ".join(lex)
+    except ValueError:
+        return None
+
+
+def check(cmd):
     if OP_LIST.search(cmd) or BW_LIST.search(cmd):
         return CRED_MSG % "a listing of password-manager vaults, items or accounts"
     if AGENT_LIST.search(cmd):
@@ -89,6 +117,16 @@ def verdict(cmd):
     if CLIENT.search(cmd) and (REMOTE_DOCKER.search(cmd) or remote_keyword_or_env(cmd)):
         return DB_MSG % "a database client reached through a remote docker host or a host setting"
     return None
+
+
+def verdict(cmd):
+    flat = unquoted(cmd)
+    if flat is None:
+        # fail closed: quoting the guard cannot read, around a database client or a connection URL
+        if CLIENT.search(cmd) or URL_AUTH.search(cmd) or CLIENT.search(re.sub(r"['\"\\]", "", cmd)):
+            return DB_MSG % "a database command whose quoting the guard cannot parse"
+        flat = re.sub(r"['\"\\]", "", cmd)
+    return check(cmd) or check(flat)
 
 
 def main():
