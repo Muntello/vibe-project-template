@@ -46,7 +46,7 @@ Steps:
 1. Pull latest code
 2. Update dependencies
 3. Run tests — failures block deployment
-4. Run database migrations (all databases)
+4. Identify the database aliases targeted by this release. Apply and verify each migration on its intended targets.
 5. Build assets (if applicable)
 6. Restart application services
 7. Health check — **rollback on failure**
@@ -69,8 +69,8 @@ git reset --hard origin/main
 # Go: go build ./...
 # Rust: cargo build --release
 
-# Run migrations (if applicable)
-# Django: python manage.py migrate
+# Run migrations for the configured target (if applicable)
+# Django: python manage.py migrate --database=<ALIAS>
 # Node.js: npx prisma migrate deploy / npx knex migrate:latest
 # Go: goose up
 

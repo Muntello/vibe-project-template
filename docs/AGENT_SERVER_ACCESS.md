@@ -158,7 +158,7 @@ ssh -i ~/.ssh/{{DEPLOY_KEY_NAME}} {{DEPLOY_USER}}@{{SERVER_HOST}}
 
 1. **READ-ONLY by default** — all write operations require explicit user permission
 2. **Ask before acting** — "Should I [action] on production?" and wait for "yes"
-3. **SSH failure = STOP** — on first SSH error, stop all attempts immediately (fail2ban risk)
+3. **SSH failures** — check credentials after an authentication failure. During an approved reboot, use the bounded reconnect procedure in [the project rules](../AGENTS.md#2-ssh-connection-failures).
 4. **Infrastructure operations** — provide step-by-step instructions, let user execute
 
 ### Available Actions (read-only, no permission needed)
