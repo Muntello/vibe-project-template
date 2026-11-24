@@ -8,6 +8,7 @@ Format: `## [YYYY-MM-DD] Summary` with bullet points for details.
 
 ## [2026-11-24] Agent user defaults and VPS example
 
+- Documented per-agent SSH commit signing on the VPS and how to check the committer and Verified status on GitHub.
 - Split cross-project working agreements into an optional user instructions file and documented two independent agent accounts on an always-on VPS.
 - Clarified SSH recovery during a planned reboot and how to select and verify database migration targets.
 

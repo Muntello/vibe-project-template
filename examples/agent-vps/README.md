@@ -10,8 +10,9 @@ A Linux VPS can run Codex and Claude Code while you work from a phone or desktop
 | Mobile app to agent | ChatGPT account paired with Codex on the VPS | Claude account signed in on the VPS and iPhone |
 | GitHub push and PR | GitHub user `example-codex` | GitHub user `example-claude` |
 | Git commit author | Name and verified email for `example-codex` | Name and verified email for `example-claude` |
+| Git commit signature | Signing key owned by `codex-agent` on the VPS | Separate signing key owned by `claude-agent` on the VPS |
 
-Create both Linux users without sudo, with private home directories. Put each user's public key in its own `~/.ssh/authorized_keys`. Keep the private keys on the operator's device or in its SSH agent. Test both SSH aliases with agent forwarding disabled. Check that each alias logs in as the intended user and that SSH password authentication is disabled. Keep the administrator's key separate.
+Create both Linux users without sudo, with private home directories. Put each user's public login key in its own `~/.ssh/authorized_keys`. Keep the corresponding private login keys on the operator's device or in its SSH agent. Test both SSH aliases with agent forwarding disabled. Check that each alias logs in as the intended user and that SSH password authentication is disabled. Keep the administrator's key separate.
 
 ## Prepare each working copy
 
@@ -30,6 +31,44 @@ git var GIT_AUTHOR_IDENT
 ```
 
 Replace the uppercase example values. On a headless server, `gh` can fall back to a token file. Check that its owner is the intended user and its mode is `0600`. Give each user its own clone even when both work on the same repository. Open the clone itself as the project so its root instructions and test commands are in scope.
+
+## Sign commits as each agent
+
+Run the setup once as `codex-agent` and again as `claude-agent`, using Git 2.34 or later and OpenSSH. Each Linux user generates its own Ed25519 key in its own home directory. If the path already holds another key or an incomplete pair, choose an unused filename. The empty passphrase lets the service sign after a reboot without an interactive unlock. Keep the private file on the VPS, readable only by its owner (mode `0600`).
+
+```sh
+signing_key="$HOME/.ssh/git-signing-ed25519"
+install -d -m 700 "$HOME/.ssh"
+if [ ! -e "$signing_key" ] && [ ! -e "$signing_key.pub" ]; then
+  ssh-keygen -q -t ed25519 -N '' -C "$(id -un) git signing" -f "$signing_key"
+fi
+ssh-keygen -lf "$signing_key.pub"
+cat "$signing_key.pub"
+```
+
+In the matching GitHub account, open **Settings → SSH and GPG keys → New SSH key**. Set **Key type** to **Signing Key**, paste the public `.pub` line and save. Check the fingerprint under **Signing keys** against the one printed above. Register this key only for signing. The account's **Authentication keys** grant Git access over SSH. [GitHub key settings](https://github.com/settings/keys)
+
+Enable automatic signing for that Linux user in the same shell. In the agent's clone, confirm that the effective committer email is verified in the matching GitHub account.
+
+```sh
+git config --global gpg.format ssh
+git config --global user.signingKey "$signing_key"
+git config --global commit.gpgSign true
+git var GIT_COMMITTER_IDENT
+```
+
+### Check Verified on GitHub
+
+For each agent, make an ordinary `git commit` on a topic branch and push it. Open that exact commit on GitHub and click **Verified** to inspect the signature. To check from the VPS, set `repo` to the repository that received the push (the fork for a fork-based PR).
+
+```sh
+repo='EXAMPLE_OWNER/EXAMPLE_REPO'
+sha=$(git rev-parse HEAD)
+gh api "repos/$repo/commits/$sha" \
+  --jq '{committer: .committer.login, email: .commit.committer.email, verified: .commit.verification.verified, reason: .commit.verification.reason}'
+```
+
+Expect the agent's GitHub login and email, `verified: true` and `reason: "valid"`. If GitHub reports `unknown_key`, check the fingerprint and key type in that account. For `unsigned`, check `git config --show-origin --get commit.gpgSign` in the clone and confirm the commit was created after enabling signing. [GitHub verification results](https://docs.github.com/en/rest/commits/commits#get-a-commit)
 
 ## Install the user instructions
 
