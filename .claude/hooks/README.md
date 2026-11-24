@@ -38,9 +38,18 @@ Per project, in `.claude/settings.json`:
 }
 ```
 
-The agent can edit a file inside its own project. For a guard it cannot switch off, copy the script to a
-location it cannot write (for example `sudo install -o root -m 0755 guard-prod-access.py /usr/local/lib/agent-hooks/`)
-and register that path in your user settings (`~/.claude/settings.json`), so it applies to every project.
+For an optional hook across your projects, register it in `~/.claude/settings.json`.
+For an administrator-enforced hook on Linux, install the reviewed script and register the absolute command
+`/usr/bin/python3 -I /usr/local/lib/agent-hooks/guard-prod-access.py` in the administrator-owned
+`/etc/claude-code/managed-settings.json`, using the same `PreToolUse` entry above. Merge the entry with
+existing managed settings. In a fresh session, ask Claude to run `ssh diag@db.example.invalid psql --version`
+through Bash. Expect a refusal from this hook before SSH starts.
+
+```sh
+sudo install -D -o root -g root -m 0755 .claude/hooks/guard-prod-access.py /usr/local/lib/agent-hooks/guard-prod-access.py
+```
+
+[Claude Code managed settings](https://code.claude.com/docs/en/managed-settings)
 
 The hook is for Claude Code. Other agents need their own mechanism, such as their sandbox and approval settings.
 

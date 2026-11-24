@@ -13,17 +13,19 @@
 import json
 import re
 import sys
+from urllib.parse import urlsplit
 
 CLIENTS = (r"(psql|pg_dump|pg_dumpall|pg_restore|clickhouse-client|clickhouse\s+client|mysql|mysqldump|mariadb"
            r"|mongo|mongosh|redis-cli|cqlsh|sqlite3)")
-LOCAL = r"(localhost|127\.0\.0\.1|::1|/tmp|/var/run)"
+HOST_ARG = r"""(?P<host>"[^"\n]*"|'[^'\n]*'|[^\s;&|)]+)"""
 SSH = re.compile(r"(^|[\s;&|(`$'\"])(sudo\s+(-\S+\s+)*)?(ssh|mosh|autossh)\s", re.I)
 CLIENT = re.compile(r"(^|[\s;&|(`'\"/])" + CLIENTS + r"(\s|$|['\";|&)])", re.I)
-REMOTE_FLAG = re.compile(r"(^|[\s;&|(])" + CLIENTS + r"\b[^;&|\n]*?(\s-h\s*|\s--host[=\s]+)(?!" + LOCAL + r")\S", re.I)
-REMOTE_URL = re.compile(r"(postgres(ql)?|clickhouse|mysql|mongodb(\+srv)?|redis)://[^\s'\"]*@(?!" + LOCAL + r")[A-Za-z0-9.-]+", re.I)
+REMOTE_FLAG = re.compile(r"(^|[\s;&|(/])" + CLIENTS + r"\b[^;&|\n]*?\s(?:-h\s*|--host[=\s]+)" + HOST_ARG, re.I)
+REMOTE_URL = re.compile(r"""(?:postgres(?:ql)?|clickhouse|mysql|mongodb(?:\+srv)?|redis)://[^\s'";|)]+""", re.I)
 REMOTE_DOCKER = re.compile(r"(DOCKER_HOST=|docker\s+(-H|--host|--context|context\s+use))", re.I)
-REMOTE_KEYWORD = re.compile(r"\bhost\s*=\s*(?!" + LOCAL + r")[A-Za-z0-9][A-Za-z0-9.-]*", re.I)
-REMOTE_ENV = re.compile(r"\b(PGHOST|CLICKHOUSE_HOST|MYSQL_HOST)=(?!" + LOCAL + r")\S", re.I)
+REMOTE_KEYWORD = re.compile(r"\bhost\s*=\s*" + HOST_ARG, re.I)
+REMOTE_ENV = re.compile(r"\b(?:PGHOST|CLICKHOUSE_HOST|MYSQL_HOST)=" + HOST_ARG, re.I)
+
 
 B = r"(^|[\s;&|(`$'\"/])"
 OBJECTS = r"(vault|vaults|item|items|account|accounts|document|documents|user|users|group|groups)"
@@ -43,6 +45,26 @@ CRED_MSG = ("Blocked by .claude/hooks/guard-prod-access.py: %s. Do not search fo
             "editor tool instead.\n")
 
 
+def local_host(value):
+    host = value.strip("'\"").lower()
+    return host in ("localhost", "127.0.0.1", "::1", "[::1]") or host.startswith("/")
+
+
+def remote_host(pattern, command):
+    return any(not local_host(match["host"]) for match in pattern.finditer(command))
+
+
+def remote_url(command):
+    for match in REMOTE_URL.finditer(command):
+        try:
+            host = urlsplit(match[0]).hostname
+        except ValueError:
+            return True
+        if host and not local_host(host):
+            return True
+    return False
+
+
 def verdict(cmd):
     if OP_LIST.search(cmd) or BW_LIST.search(cmd):
         return CRED_MSG % "a listing of password-manager vaults, items or accounts"
@@ -52,9 +74,9 @@ def verdict(cmd):
         return CRED_MSG % "a read of the macOS keychain"
     if SSH.search(cmd) and CLIENT.search(cmd):
         return DB_MSG % "a database client over ssh"
-    if REMOTE_FLAG.search(cmd) or REMOTE_URL.search(cmd):
+    if remote_host(REMOTE_FLAG, cmd) or remote_url(cmd):
         return DB_MSG % "a database client pointed at a remote host"
-    if CLIENT.search(cmd) and (REMOTE_DOCKER.search(cmd) or REMOTE_KEYWORD.search(cmd) or REMOTE_ENV.search(cmd)):
+    if CLIENT.search(cmd) and (REMOTE_DOCKER.search(cmd) or remote_host(REMOTE_KEYWORD, cmd) or remote_host(REMOTE_ENV, cmd)):
         return DB_MSG % "a database client reached through a remote docker host or a host setting"
     return None
 

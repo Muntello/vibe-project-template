@@ -31,8 +31,8 @@ Two access modes exist for working with the production server. Choose the approp
 ssh -i ~/.ssh/{{DIAG_KEY_NAME}} diag@{{SERVER_HOST}}
 ```
 
-**User**: `diag` — no sudo, read-only access only.
-**Database role**: `diagnostic_user` — SELECT-only on all project databases, with server-side limits, reached through
+**User**: `diag` — read-only diagnostics. The sole sudo delegation runs the PostgreSQL dispatcher as its unprivileged service account.
+**Database role**: `diagnostic_user` — SELECT-only on configured project databases, with server-side limits, reached through
 the `diag-sql` wrapper.
 
 ### Available Actions
@@ -86,6 +86,8 @@ run the database client directly, over ssh or otherwise: the wrapper is what app
 
 ```bash
 ssh -i ~/.ssh/{{DIAG_KEY_NAME}} diag@{{SERVER_HOST}} diag-sql < query.sql
+# For a second configured database, pass its name explicitly.
+ssh -i ~/.ssh/{{DIAG_KEY_NAME}} diag@{{SERVER_HOST}} diag-sql {{DB_NAME}} < query.sql
 ```
 
 **Query rules.** A read-only query can still overload the database for everyone:
@@ -115,7 +117,7 @@ ORDER BY pg_relation_size(oid) DESC LIMIT 20;
 SELECT datname, usename, state, query_start, query
 FROM pg_stat_activity
 WHERE datname = '{{DB_NAME}}'
-ORDER BY query_start DESC;
+ORDER BY query_start DESC LIMIT 20;
 
 -- Database health
 SELECT datname, numbackends, xact_commit, xact_rollback, deadlocks
@@ -142,7 +144,7 @@ ss -tlnp | grep -E "{{PORT_PATTERN}}"
 ### Restrictions in Diagnostic Mode
 
 **You CANNOT and MUST NOT attempt to:**
-- Run `sudo` anything — it will be denied
+- Use administrative sudo. The diagnostic dispatcher is the only delegated command.
 - Modify or delete files
 - Restart services
 - Run application CLI commands (no access to app runtime)
@@ -185,14 +187,9 @@ Everything from Diagnostic Mode, plus:
 cd {{APP_PATH}}
 # Activate environment (virtualenv, nvm, etc.) if needed
 
-# Read configuration
-cat {{APP_PATH}}/.env
-cat /etc/systemd/system/{{SERVICE_NAME}}.service
-# cat {{APP_PATH}}/docker-compose.yml
-
-# Cache/broker inspection
-# redis-cli INFO
-# redis-cli DBSIZE
+# Inspect service state and the location of its configuration
+systemctl show {{SERVICE_NAME}} -p ActiveState -p SubState
+systemctl show {{SERVICE_NAME}} -p FragmentPath
 ```
 
 ### Actions Requiring Explicit User Permission
