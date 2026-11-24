@@ -16,11 +16,15 @@ import sys
 
 CLIENTS = (r"(psql|pg_dump|pg_dumpall|pg_restore|clickhouse-client|clickhouse\s+client|mysql|mysqldump|mariadb"
            r"|mongo|mongosh|redis-cli|cqlsh|sqlite3)")
-LOCAL = r"(localhost|127\.0\.0\.1|::1|/tmp|/var/run)"
-SSH = re.compile(r"(^|[\s;&|(`$'\"])(sudo\s+(-\S+\s+)*)?(ssh|mosh|autossh)\s", re.I)
+# a local host is the WHOLE host token: "localhost.example.com" or "127.0.0.1.example.net" is remote
+END = r"(?=$|[\s:/'\"@;|&)?])"
+LOCAL = r"(?:(?:localhost|127\.0\.0\.1|::1|\[::1\])" + END + r"|/tmp" + END + r"|/var/run" + END + r")"
+SSH = re.compile(r"(^|[\s;&|(`$'\"/])(sudo\s+(-\S+\s+)*)?(ssh|mosh|autossh)\s", re.I)
 CLIENT = re.compile(r"(^|[\s;&|(`'\"/])" + CLIENTS + r"(\s|$|['\";|&)])", re.I)
-REMOTE_FLAG = re.compile(r"(^|[\s;&|(])" + CLIENTS + r"\b[^;&|\n]*?(\s-h\s*|\s--host[=\s]+)(?!" + LOCAL + r")\S", re.I)
-REMOTE_URL = re.compile(r"(postgres(ql)?|clickhouse|mysql|mongodb(\+srv)?|redis)://[^\s'\"]*@(?!" + LOCAL + r")[A-Za-z0-9.-]+", re.I)
+REMOTE_FLAG = re.compile(r"(^|[\s;&|(/])" + CLIENTS + r"\b[^;&|\n]*?(\s-h\s*|\s--host[=\s]+)['\"]?(?!" + LOCAL + r")\S", re.I)
+# with or without user:password@ before the host
+REMOTE_URL = re.compile(r"(postgres(ql)?|clickhouse|mysql|mongodb(\+srv)?|redis)://"
+                        r"([^\s/@'\"]*@|(?![^\s/'\"]*@))(?!" + LOCAL + r")[A-Za-z0-9.\[-]", re.I)
 REMOTE_DOCKER = re.compile(r"(DOCKER_HOST=|docker\s+(-H|--host|--context|context\s+use))", re.I)
 REMOTE_KEYWORD = re.compile(r"\bhost\s*=\s*(?!" + LOCAL + r")[A-Za-z0-9][A-Za-z0-9.-]*", re.I)
 REMOTE_ENV = re.compile(r"\b(PGHOST|CLICKHOUSE_HOST|MYSQL_HOST)=(?!" + LOCAL + r")\S", re.I)
