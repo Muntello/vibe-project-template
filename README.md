@@ -95,6 +95,8 @@ AI agents get production access through two isolated users:
 
 See `docs/AGENT_SERVER_ACCESS.md` and `docs/DIAG_USER_SETUP.md`.
 
+For development from a phone or desktop, see [Two coding agents on one VPS](examples/agent-vps/README.md). It covers per-agent accounts, GitHub access and startup after a reboot.
+
 #### Configuration Hierarchy
 
 | Layer | Source | Purpose |
@@ -105,8 +107,10 @@ See `docs/AGENT_SERVER_ACCESS.md` and `docs/DIAG_USER_SETUP.md`.
 
 #### Two Layers of Agent Knowledge
 
-`AGENTS.md` is **always-on**: loaded into every turn of every session, propagated via symlinks
-to `CLAUDE.md` and `GEMINI.md`. It holds what is true regardless of the task.
+Project instructions live in `AGENTS.md`, with `CLAUDE.md` and `GEMINI.md` linked to it.
+Keep test commands, migration targets and release conventions here. For preferences shared
+across projects, install the optional [user defaults](agent-defaults/AGENTS.md) in each
+agent's home directory.
 
 `.claude/skills/` is **on-demand**: only a skill's one-line description costs context until a
 task matches it, at which point the full body loads. Catalogues, runbooks and subsystem
@@ -141,5 +145,5 @@ Per-iteration specs, plans, and checkpoints live in the gitignored `.context/` d
 - [ ] Run diagnostic user setup (`docs/DIAG_USER_SETUP.md`)
 - [ ] Customize deployment workflows
 - [ ] Delete files not relevant to your stack
-- [ ] Delete the `AGENTS.md` sections that don't apply — it ships at its own ~10 KB ceiling
+- [ ] Delete the `AGENTS.md` sections that don't apply
 - [ ] Remove this checklist

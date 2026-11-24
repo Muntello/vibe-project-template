@@ -10,34 +10,37 @@
 
 ### 1. Read-Only Mode (ABSOLUTE)
 
-**Default behavior on production servers: READ ONLY.**
+**Default access to production resources is read-only.** On a shared host, an agent may
+edit and test in its own development clone within the requested task. The rules below
+cover the live deployment, production data and host administration.
 
 The agent MUST NOT perform any of these actions without explicit user permission:
 - Install or remove software
 - Modify configuration files (`.env`, service units, reverse proxy configs)
-- Create, modify, or delete files on the server
+- Create, modify, or delete files in the live deployment
 - Start, stop, or restart any service
 - Run database migrations or write to databases
 - Create, modify, or remove system users
 - Modify firewall rules or network configuration
 
-**If a write operation is needed**: describe what you want to do, explain why, and WAIT for explicit "yes" from the user.
+If a production change falls outside the user's explicit authorization, describe its
+scope and impact and wait for approval.
 
 ### 2. SSH Connection Failures
 
-**STOP on first SSH error.** Do NOT retry.
+On an authentication failure, stop and check the intended host, user and key before
+trying again. Repeated failed logins can trigger a ban. If the host key changes, verify
+its fingerprint through a trusted channel before reconnecting.
 
-Production servers use fail2ban. Repeated failed attempts will ban the IP address.
-If SSH fails:
-1. Report the exact error to the user
-2. Do NOT attempt alternative connections
-3. Wait for user guidance
+During an approved reboot, a refused connection or timeout is expected. Retry the
+same SSH configuration at a bounded interval (for example, every 10 seconds for up
+to two minutes). Report the last error if the host does not return.
 
 ### 3. Database Migrations / Schema Changes
 
-**ALWAYS apply migrations to ALL project databases.** Projects may use multiple databases (primary, analytics, secondary services, etc.).
-
-Verify which databases exist and run migrations for each one.
+Use the project's schema ownership and migration configuration to identify the target
+database(s). Confirm the environment and aliases before applying the migration.
+Verify the migration state on each intended target.
 
 ### 4. Configuration Comments
 
@@ -67,19 +70,11 @@ boot is worse than one that was never added.
 
 ---
 
-## Working Principles
+## Project requirements
 
-The rules above are procedural ("do X"). These are judgment principles — they govern the cases the
-rules don't spell out, and each gives a checkable test, not a slogan:
-
-1. **Docs that drift from code are worse than no docs** — wrong docs actively mislead. A change
-   isn't done until the docs it affects are fixed (or deleted). Documentation is part of the
-   change, not a follow-up.
-2. **"Done" means verified by a real request — not "code written."** Exercise the change against
-   the running system (an HTTP call, a query, a real webhook) and see the expected result. "It
-   should work" and "the command didn't error" are not done.
-3. **When unsure, ask — don't assume.** A wrong assumption baked silently into code or config costs
-   far more than a question. If a requirement, name, or contract is ambiguous, surface it and wait.
+Clarify an ambiguous requirement, name or external contract before implementing a
+change that depends on it. Cross-project working agreements are available in the
+optional [user defaults](agent-defaults/AGENTS.md).
 
 ---
 
@@ -249,10 +244,7 @@ only grows — every incident and integration gets appended, nothing is ever rem
 result is a 40–80 KB file where the useful 5 KB is buried. Measure by section; the offender is
 usually one heading at a third of the total.
 
-As shipped, this template sits *at* that ceiling, so a new project starts with no headroom.
-That is deliberate: the first real edit should be **deleting** — the stack you don't use, the
-access model you don't have, the tables you won't fill in. Adding project specifics on top of
-the full template is how the 40 KB version begins.
+When starting a project, remove the stacks, access modes and tables it does not use.
 
 Move out: anything shaped "here are N similar subsystems" (integrations, providers, accounts,
 environments) — only one is ever relevant at a time. And any procedure that fires on a task

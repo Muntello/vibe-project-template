@@ -34,12 +34,12 @@
 **Fix**: Ensure all components use the same timezone (configured in `.env`)
 **Prevention**: Set `TIME_ZONE` in `.env` and verify it's used consistently
 
-### #3 — Forgetting to Migrate All Databases
+### #3 — Missing a Migration Target
 
 **Symptom**: New model fields missing, migration errors on secondary databases
-**Root Cause**: Running `migrate` only on default database
-**Fix**: Run `python manage.py migrate --database=<ALIAS>` for each database
-**Prevention**: Follow the migration checklist in AGENTS.md
+**Root Cause**: The migration ran against the default database while the model is routed to a different alias.
+**Fix**: Confirm which alias owns the model. For Django, apply the approved migration with `python manage.py migrate --database=<ALIAS>` and verify it with `showmigrations --database=<ALIAS>`.
+**Prevention**: Check the [migration targets](../AGENTS.md#3-database-migrations--schema-changes) during deployment.
 
 ### #4 — Static Files in Wrong Directory
 
@@ -50,10 +50,10 @@
 
 ### #5 — SSH Retries Causing IP Ban
 
-**Symptom**: SSH connection permanently refused
+**Symptom**: SSH stops accepting connections from the client after several failed logins.
 **Root Cause**: fail2ban banned the IP after multiple failed SSH attempts
-**Fix**: Access server from a different IP or wait for ban expiration
-**Prevention**: STOP on first SSH failure. Never retry automatically
+**Fix**: Check the username and key. If a ban is confirmed, wait for it to expire or contact the host administrator.
+**Prevention**: Stop on authentication failures. Use [bounded retries](../AGENTS.md#2-ssh-connection-failures) for expected downtime during an approved reboot.
 
 <!-- Add more pitfalls as you encounter them -->
 
