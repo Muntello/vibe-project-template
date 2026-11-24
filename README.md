@@ -54,6 +54,9 @@ Search and replace all `{{PLACEHOLDER}}` values across the project:
 ├── .claude/skills/                       # On-demand agent knowledge
 │   ├── README.md                         # When to create a skill, and where it belongs
 │   └── _template/SKILL.md                # Copy-me skill template
+├── .claude/hooks/                        # Optional guards (Claude Code)
+│   ├── README.md                         # What they block, how to install
+│   └── guard-prod-access.py              # No raw DB clients on prod, no credential searches
 ├── CHANGELOG.md                          # Change history
 ├── README.md                             # This file
 ├── .env.example                          # Environment variables template
@@ -93,7 +96,12 @@ AI agents get production access through two isolated users:
 - **`diag`** (Diagnostic Mode): Read-only. Separate SSH key. Can read logs, run SELECT queries, check service status. Cannot modify anything.
 - **`{{DEPLOY_USER}}`** (Investigation Mode): Full access. Every write operation requires explicit user permission before the agent acts.
 
-See `docs/AGENT_SERVER_ACCESS.md` and `docs/DIAG_USER_SETUP.md`.
+Read-only is not the same as harmless: one unbounded SELECT can hold a database's CPU or memory. The diagnostic
+role therefore gets server-side limits, and agents query only through a small wrapper that applies them and refuses
+table-scanning query shapes. An optional Claude Code hook refuses raw database clients on production and searches
+for credentials.
+
+See `docs/AGENT_SERVER_ACCESS.md`, `docs/DIAG_USER_SETUP.md` and `.claude/hooks/README.md`.
 
 For development from a phone or desktop, see [Two coding agents on one VPS](examples/agent-vps/README.md). It covers per-agent accounts, GitHub access and startup after a reboot.
 

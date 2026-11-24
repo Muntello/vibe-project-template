@@ -24,7 +24,8 @@ The agent MUST NOT perform any of these actions without explicit user permission
 - Modify firewall rules or network configuration
 
 If a production change falls outside the user's explicit authorization, describe its
-scope and impact and wait for approval.
+scope and impact and wait for approval. An approval covers the steps you named, nothing
+more: an extra check or fix on the host goes back to the user first.
 
 ### 2. SSH Connection Failures
 
@@ -68,6 +69,16 @@ Never assume UTC unless the project explicitly uses it.
 Verify the app still starts after every change. A feature that works in isolation and breaks
 boot is worse than one that was never added.
 
+### 7. Production Database Reads
+
+Only via `diag-sql` and its query rules (`docs/AGENT_SERVER_ACCESS.md`), never a client over SSH
+or against a remote host: a read-only query can still take a database down.
+
+### 8. Credentials
+
+Use only the access set up for the task; ask the user for anything else. Never search for
+credentials (password managers, SSH agent, keychain). Guard: `.claude/hooks/`.
+
 ---
 
 ## Project requirements
@@ -104,6 +115,7 @@ After ANY code change, update the relevant documentation:
 |----------|---------|
 | `AGENTS.md` | Master agent instructions, always-on (this file) |
 | `.claude/skills/` | On-demand agent knowledge — catalogues, runbooks, subsystem mechanics |
+| `.claude/hooks/` | Optional guards for the production and credential rules |
 | `README.md` | Project overview, setup, architecture |
 | `docs/ARCHITECTURE.md` | Living system specification (what it does and is made of) |
 | `docs/decisions/` | Architecture Decision Records — the "why" behind decisions |
@@ -133,7 +145,7 @@ After ANY code change, update the relevant documentation:
 
 ### Environment Configuration
 
-- Read env vars via your framework's recommended method (e.g., `decouple.config()` for Python, `process.env` with dotenv for Node, `os.Getenv` for Go)
+- Read env vars via your framework's recommended method
 - All secrets go in `.env` (listed in `.gitignore`) or a secrets manager
 - Never hardcode secrets in code or documentation
 
@@ -147,15 +159,9 @@ After ANY code change, update the relevant documentation:
 
 ### Key Integrations
 
-<!-- List external services your project integrates with -->
-<!-- Examples:
-- **PostgreSQL / MySQL / MongoDB**: Primary data store
-- **Redis / Memcached**: Cache and/or message broker
-- **Stripe / PayPal**: Payment processing
-- **Telegram / Slack**: Alert notifications
-- **S3 / GCS**: File storage
-- **BigQuery / Snowflake**: Analytics
--->
+<!-- One line per external service: data store, cache/broker, payments, alerts, storage, analytics -->
+| Name | Role | Docs |
+|------|------|------|
 
 ---
 
@@ -206,14 +212,9 @@ feat: add user search endpoint (#55)
 
 ## Server Access
 
-Two access modes exist for production servers. See `docs/AGENT_SERVER_ACCESS.md` for full details.
-
-| Mode | User | Access Level | Use Case |
-|------|------|-------------|----------|
-| Diagnostic | `diag` | Read-only | Log checks, SELECT queries, monitoring |
-| Investigation | `{{DEPLOY_USER}}` | Full (with permission) | Restarts, migrations, config changes |
-
-**Default**: Always start with Diagnostic Mode. Escalate only when read-only is insufficient.
+Two modes, details in `docs/AGENT_SERVER_ACCESS.md`: Diagnostic (`diag`, read-only: logs, status,
+`diag-sql`) and Investigation (`{{DEPLOY_USER}}`, every change with permission). **Default**: start in
+Diagnostic Mode; escalate only when read-only is insufficient.
 
 ---
 

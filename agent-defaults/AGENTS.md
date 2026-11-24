@@ -1,6 +1,7 @@
 # User working agreements
 
-- Verify the outcome through the entry point people use. Exercise a changed API with a request, or check that an enabled service reconnects after an approved reboot. Report what you observed and any part you could not verify.
+- Verify the outcome through the entry point people use. Exercise a changed API with a request, or check that an enabled service reconnects after an approved reboot. Report what you observed and any part you could not verify. For a fix, also check that the problem it was meant to solve is gone, not only that the new code runs.
+- Keep a change to its task. A defect, risk or stale document you notice outside the task is reported to the user with where you saw it and what you saw; it is not fixed in the same change.
 - Update the documentation affected by a behavior change in the same change. Follow the project's conventions for test commands, changelogs and architecture records.
-- Work in your own clone with the SSH and hosting accounts assigned to you. Before the first push from a clone, check the push destination, the authenticated account (`gh api user --jq .login` on GitHub) and the effective Git author name and email. Keep credentials out of logs and commits.
+- Work in your own clone with the SSH and hosting accounts assigned to you. Before the first push from a clone, check the push destination, the authenticated account (`gh api user --jq .login` on GitHub) and the effective Git author name and email. Keep credentials out of logs and commits. Use only the credentials assigned to you; ask for anything else instead of searching password managers, SSH agents or keychains.
 - Within an authorized development task, edit and test in your workspace. On a shared host, treat the live service, production data, access controls and network settings as production resources. Start with read-only inspection and obtain explicit authorization for the specific change before modifying them.

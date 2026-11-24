@@ -124,6 +124,93 @@ psql -h localhost -U diagnostic_user -d {{DB_NAME}} -c "DELETE FROM {{ANY_TABLE}
 # Expected: ERROR: permission denied
 ```
 
+## 6a. Limit What One Query Can Cost
+
+Read-only does not mean harmless. A single SELECT with a leading-wildcard search, a regex or an exact distinct count
+over a large table can hold the database CPU or memory for minutes and take the application down with it. Give the
+diagnostic role limits that the server enforces, sized so that one runaway query still leaves the application
+enough CPU and memory on the smallest machine that runs this database.
+
+### PostgreSQL
+
+```bash
+sudo -u postgres psql <<'SQL'
+ALTER ROLE diagnostic_user SET default_transaction_read_only = on;
+ALTER ROLE diagnostic_user SET statement_timeout = '8s';
+ALTER ROLE diagnostic_user SET lock_timeout = '2s';
+ALTER ROLE diagnostic_user SET idle_in_transaction_session_timeout = '30s';
+ALTER ROLE diagnostic_user CONNECTION LIMIT 3;
+SQL
+```
+
+Role settings are defaults: a session can change them with `SET`. The wrapper in 6b applies them again for every
+query and refuses `SET` in the query text.
+
+### MySQL
+
+```sql
+ALTER USER 'diagnostic_user'@'localhost' WITH MAX_USER_CONNECTIONS 3 MAX_QUERIES_PER_HOUR 600;
+```
+
+The statement time limit (`max_execution_time`) is a session variable; the wrapper sets it for every query.
+
+### ClickHouse
+
+```sql
+CREATE SETTINGS PROFILE IF NOT EXISTS diag_limits SETTINGS
+    readonly = 1,
+    max_execution_time = 8,
+    max_memory_usage = 500000000,
+    max_rows_to_read = 30000000,
+    max_bytes_to_read = 3000000000,
+    max_threads = 2;
+CREATE USER IF NOT EXISTS diagnostic_user IDENTIFIED WITH sha256_password BY 'GENERATE_PASSWORD_HERE'
+    SETTINGS PROFILE 'diag_limits';
+GRANT SELECT ON {{DB_NAME}}.* TO diagnostic_user;
+```
+
+`readonly = 1` also forbids changing settings, including a `SETTINGS` clause in the query, so these limits are hard.
+Needs SQL-driven access control on the server (`access_management` enabled for the admin user).
+
+## 6b. Install the Query Wrapper
+
+Agents never run the database client directly. They send one query to a wrapper that applies the limits and refuses
+query shapes known to scan whole tables. Install it root-owned, so neither `diag` nor an agent can change it.
+
+PostgreSQL version (adapt the refusals and the client line for other engines; for ClickHouse refuse `FINAL`,
+`uniqExact`, `count(DISTINCT` and `groupUniqArray`):
+
+```bash
+sudo tee /usr/local/bin/diag-sql >/dev/null <<'WRAPPER'
+#!/bin/bash
+# diag-sql: run one read-only query with hard limits. Usage: diag-sql < query.sql
+set -euo pipefail
+q=$(cat)
+refuse() { echo "diag-sql: refused: $1. Rewrite the query (docs/AGENT_SERVER_ACCESS.md, query rules)." >&2; exit 2; }
+grep -qiE '(^|[^a-z_])(set|reset|begin|commit|rollback|copy)([^a-z_]|$)' <<<"$q" && refuse "session or transaction commands"
+grep -qiE "like[[:space:]]+'%" <<<"$q" && refuse "a leading-wildcard LIKE"
+grep -qiE '~|similar[[:space:]]+to' <<<"$q" && refuse "a regex match"
+grep -qiE '::[[:space:]]*(text|varchar)' <<<"$q" && refuse "a cast to text"
+grep -qiE 'explain[^;]*analy[sz]e' <<<"$q" && refuse "EXPLAIN ANALYZE, which runs the query"
+{
+  echo "SET statement_timeout = '8s'; SET lock_timeout = '2s';"
+  echo "BEGIN READ ONLY;"
+  printf '%s\n' "$q"
+  echo "ROLLBACK;"
+} | psql -X -q -v ON_ERROR_STOP=1 -h localhost -U diagnostic_user -d {{DB_NAME}}
+WRAPPER
+sudo chown root:root /usr/local/bin/diag-sql
+sudo chmod 0755 /usr/local/bin/diag-sql
+```
+
+The refusals guard against mistakes; the role grants and limits in 6 and 6a are the boundary.
+
+From the agent's machine:
+
+```bash
+ssh -i ~/.ssh/{{DIAG_KEY_NAME}} diag@{{SERVER_HOST}} diag-sql < query.sql
+```
+
 ## 7. Create Credential File for Passwordless CLI Access
 
 ### PostgreSQL (.pgpass)
@@ -182,6 +269,9 @@ head -5 {{APP_PATH}}/logs/app.log                                              #
 systemctl status {{SERVICE_NAME}} --no-pager                                   # -> works
 psql -h localhost -U diagnostic_user -d {{DB_NAME}} -c "SELECT 1"             # -> works
 psql -h localhost -U diagnostic_user -d {{DB_NAME}} -c "DROP TABLE test"      # -> permission denied
+echo "SELECT 1" | diag-sql                                                     # -> works
+echo "SELECT pg_sleep(20)" | diag-sql                                          # -> canceled by statement timeout
+echo "SELECT * FROM {{ANY_TABLE}} WHERE name ILIKE '%x%'" | diag-sql            # -> refused
 ```
 
 ---
@@ -196,7 +286,7 @@ psql -h localhost -U diagnostic_user -d {{DB_NAME}} -c "DROP TABLE test"      # 
 | Read system logs | `journalctl -u <service>` |
 | Read reverse proxy logs | `tail /var/log/nginx/*.log` |
 | Check service status | `systemctl status <service>` |
-| SELECT from all databases | DB CLI with `diagnostic_user` |
+| SELECT from all databases | `diag-sql` wrapper, with the limits of 6a |
 | Check disk usage | `df -h`, `du` |
 | Check processes | `ps aux`, `top`, `htop` |
 | Network diagnostics | `ss`, `ping` |
