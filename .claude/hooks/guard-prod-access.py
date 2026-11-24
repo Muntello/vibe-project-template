@@ -16,14 +16,46 @@ import sys
 
 CLIENTS = (r"(psql|pg_dump|pg_dumpall|pg_restore|clickhouse-client|clickhouse\s+client|mysql|mysqldump|mariadb"
            r"|mongo|mongosh|redis-cli|cqlsh|sqlite3)")
-LOCAL = r"(localhost|127\.0\.0\.1|::1|/tmp|/var/run)"
-SSH = re.compile(r"(^|[\s;&|(`$'\"])(sudo\s+(-\S+\s+)*)?(ssh|mosh|autossh)\s", re.I)
+SSH = re.compile(r"(^|[\s;&|(`$'\"/])(sudo\s+(-\S+\s+)*)?(ssh|mosh|autossh)\s", re.I)
 CLIENT = re.compile(r"(^|[\s;&|(`'\"/])" + CLIENTS + r"(\s|$|['\";|&)])", re.I)
-REMOTE_FLAG = re.compile(r"(^|[\s;&|(])" + CLIENTS + r"\b[^;&|\n]*?(\s-h\s*|\s--host[=\s]+)(?!" + LOCAL + r")\S", re.I)
-REMOTE_URL = re.compile(r"(postgres(ql)?|clickhouse|mysql|mongodb(\+srv)?|redis)://[^\s'\"]*@(?!" + LOCAL + r")[A-Za-z0-9.-]+", re.I)
+
+# Host values are parsed and compared whole, so "localhost.example.com" is remote, and every host in a comma
+# list (libpq allows "localhost:5432,db.example.com") must be local.
+LOCAL_HOSTS = {"", "localhost", "127.0.0.1", "::1"}
+
+
+def _host_of(part):
+    part = part.strip().strip("'\"")
+    if part.startswith("/"):
+        return ""  # a unix socket directory
+    if part.startswith("["):
+        return part[1:part.find("]")].lower() if "]" in part else part.lower()
+    if part.count(":") == 1:
+        part = part.split(":", 1)[0]
+    return part.lower()
+
+
+def any_remote(value):
+    return any(_host_of(p) not in LOCAL_HOSTS for p in value.split(","))
+
+
+FLAG_HOST = re.compile(r"(^|[\s;&|(/])" + CLIENTS + r"\b[^;&|\n]*?(\s-h\s*|\s--host[=\s]+)['\"]?(?P<h>[^\s'\";|&)]*)", re.I)
+URL_AUTH = re.compile(r"(postgres(ql)?|clickhouse|mysql|mongodb(\+srv)?|redis)://(?P<a>[^\s/?#'\"]*)", re.I)
+KEYWORD_HOST = re.compile(r"\bhost\s*=\s*['\"]?(?P<h>[^\s'\";|&)]+)", re.I)
+ENV_HOST = re.compile(r"\b(PGHOST|CLICKHOUSE_HOST|MYSQL_HOST)=['\"]?(?P<h>[^\s'\";|&)]*)", re.I)
 REMOTE_DOCKER = re.compile(r"(DOCKER_HOST=|docker\s+(-H|--host|--context|context\s+use))", re.I)
-REMOTE_KEYWORD = re.compile(r"\bhost\s*=\s*(?!" + LOCAL + r")[A-Za-z0-9][A-Za-z0-9.-]*", re.I)
-REMOTE_ENV = re.compile(r"\b(PGHOST|CLICKHOUSE_HOST|MYSQL_HOST)=(?!" + LOCAL + r")\S", re.I)
+
+
+def remote_flag_or_url(cmd):
+    if any(any_remote(m.group("h")) for m in FLAG_HOST.finditer(cmd)):
+        return True
+    # the host follows the LAST "@" of the authority
+    return any(any_remote(m.group("a").rsplit("@", 1)[-1]) for m in URL_AUTH.finditer(cmd))
+
+
+def remote_keyword_or_env(cmd):
+    return any(any_remote(m.group("h")) for m in KEYWORD_HOST.finditer(cmd)) or \
+        any(any_remote(m.group("h")) for m in ENV_HOST.finditer(cmd))
 
 B = r"(^|[\s;&|(`$'\"/])"
 OBJECTS = r"(vault|vaults|item|items|account|accounts|document|documents|user|users|group|groups)"
@@ -52,9 +84,9 @@ def verdict(cmd):
         return CRED_MSG % "a read of the macOS keychain"
     if SSH.search(cmd) and CLIENT.search(cmd):
         return DB_MSG % "a database client over ssh"
-    if REMOTE_FLAG.search(cmd) or REMOTE_URL.search(cmd):
+    if remote_flag_or_url(cmd):
         return DB_MSG % "a database client pointed at a remote host"
-    if CLIENT.search(cmd) and (REMOTE_DOCKER.search(cmd) or REMOTE_KEYWORD.search(cmd) or REMOTE_ENV.search(cmd)):
+    if CLIENT.search(cmd) and (REMOTE_DOCKER.search(cmd) or remote_keyword_or_env(cmd)):
         return DB_MSG % "a database client reached through a remote docker host or a host setting"
     return None
 
