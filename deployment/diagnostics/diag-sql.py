@@ -9,6 +9,7 @@ from contextlib import closing
 from pathlib import Path
 
 import psycopg
+from psycopg.types.string import TextLoader
 from pglast import ast, parse_sql
 from pglast.parser import ParseError
 
@@ -45,13 +46,17 @@ def run_query(connection, query, output):
         connection.execute("SET LOCAL statement_timeout = '8s'")
         connection.execute("SET LOCAL lock_timeout = '2s'")
         writer = csv.writer(output)
-        with connection.cursor() as cursor, closing(cursor.stream(query)) as rows:
-            first = next(rows, None)
-            if cursor.description:
-                writer.writerow([column.name for column in cursor.description])
-            if first is not None:
-                writer.writerow(first)
-                writer.writerows(rows)
+        with connection.cursor() as cursor:
+            # CSV needs the server's JSON text, including quoted scalars and exact numbers.
+            for type_name in ("json", "jsonb"):
+                cursor.adapters.register_loader(type_name, TextLoader)
+            with closing(cursor.stream(query)) as rows:
+                first = next(rows, None)
+                if cursor.description:
+                    writer.writerow([column.name for column in cursor.description])
+                if first is not None:
+                    writer.writerow(first)
+                    writer.writerows(rows)
 
 
 def main():

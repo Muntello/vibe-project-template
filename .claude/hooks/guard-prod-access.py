@@ -17,8 +17,9 @@ import re
 import shlex
 import sys
 
-CLIENTS = (r"(psql|pg_dump|pg_dumpall|pg_restore|clickhouse-client|clickhouse\s+client|mysql|mysqldump|mariadb"
-           r"|mongo|mongosh|redis-cli|cqlsh|sqlite3)")
+NETWORK_CLIENTS = (r"psql|pg_dump|pg_dumpall|pg_restore|clickhouse-client|clickhouse\s+client|mysql|mysqldump|mariadb"
+                   r"|mongo|mongosh|redis-cli|cqlsh")
+CLIENTS = rf"({NETWORK_CLIENTS}|sqlite3)"
 SSH = re.compile(r"(^|[\s;&|(`$'\"/])(sudo\s+(-\S+\s+)*)?(ssh|mosh|autossh)\s", re.I)
 CLIENT = re.compile(r"(^|[\s;&|(`'\"/])" + CLIENTS + r"(\s|$|['\";|&)])", re.I)
 
@@ -44,8 +45,14 @@ def any_remote(value, empty_is_local=False):
     return any(_host_of(p) not in LOCAL_HOSTS for p in value.split(","))
 
 
-# each client invocation up to the next ; & | or newline, then EVERY host flag in it (the client uses the last one)
-CLIENT_SEGMENT = re.compile(r"(^|[\s;&|(/])" + CLIENTS + r"\b(?P<s>[^\n]*)", re.I)  # to the end of the line
+# Only unquoted shell control operators start another command. Keep quoted data,
+# redirects, and the contents of substitutions with their enclosing invocation.
+SHELL_PART = re.compile(r"""
+    \\[\s\S] | '[^']*' | "(?:\\[\s\S]|[^"\\])*" | `(?:\\[\s\S]|[^`\\])*`
+    | [<>]& | &>>? | >\|
+    | (?P<expansion>\$\(|\$\{|[<>]\() | [(){}] | (?P<separator>[;&|\n]+)
+""", re.VERBOSE)
+NETWORK_CLIENT = re.compile(r"(?:^|[\s;&|(/'\"\x60])(?:" + NETWORK_CLIENTS + r")(?=\s|$|['\";|&)])", re.I)
 FLAG_HOST = re.compile(r"\s(-[A-Za-z]*h|--ho(?:st?)?=?)\s*['\"]?(?P<h>[^\s'\";&|()]*)")  # -h, bundled -Xh, --ho/--hos/--host
 URL_AUTH = re.compile(r"(postgres(ql)?|clickhouse|mysql|mongodb(\+srv)?|redis)://(?P<a>[^\s/'\"]*)", re.I)
 KEYWORD_HOST = re.compile(r"\bhost(addr)?\s*=\s*['\"]?(?P<h>[^\s'\";&|()]*)", re.I)
@@ -61,11 +68,28 @@ def _url_remote(authority):
     return any_remote(libpq, empty_is_local=(authority == "")) or any_remote(other, empty_is_local=(short == ""))
 
 
-def remote_flag_or_url(cmd):
-    for seg in CLIENT_SEGMENT.finditer(cmd):
-        if any(any_remote(m.group("h")) for m in FLAG_HOST.finditer(seg.group("s"))):
-            return True
-    return any(_url_remote(m.group("a")) for m in URL_AUTH.finditer(cmd))
+def shell_commands(cmd):
+    start = 0
+    closers = []
+    for part in SHELL_PART.finditer(cmd):
+        token = part[0]
+        if part.lastgroup == "expansion" or (closers and token in ("(", "{")):
+            closers.append(")" if token.endswith("(") else "}")
+        elif closers and token == closers[-1]:
+            closers.pop()
+        elif not closers and part.lastgroup == "separator":
+            yield cmd[start:part.start()]
+            start = part.end()
+    yield cmd[start:]
+
+
+def remote_host_flag(cmd):
+    for segment in shell_commands(cmd):
+        for text in (segment, unquoted(segment) or ""):
+            client = NETWORK_CLIENT.search(text)
+            if client and any(any_remote(m["h"]) for m in FLAG_HOST.finditer(text, client.end())):
+                return True
+    return False
 
 
 def remote_keyword_or_env(cmd):
@@ -112,7 +136,7 @@ def check(cmd):
         return CRED_MSG % "a read of the macOS keychain"
     if SSH.search(cmd) and CLIENT.search(cmd):
         return DB_MSG % "a database client over ssh"
-    if remote_flag_or_url(cmd):
+    if any(_url_remote(m["a"]) for m in URL_AUTH.finditer(cmd)):
         return DB_MSG % "a database client pointed at a remote host"
     if CLIENT.search(cmd) and (REMOTE_DOCKER.search(cmd) or remote_keyword_or_env(cmd)):
         return DB_MSG % "a database client reached through a remote docker host or a host setting"
@@ -126,7 +150,12 @@ def verdict(cmd):
         if CLIENT.search(cmd) or URL_AUTH.search(cmd) or CLIENT.search(re.sub(r"['\"\\]", "", cmd)):
             return DB_MSG % "a database command whose quoting the guard cannot parse"
         flat = re.sub(r"['\"\\]", "", cmd)
-    return check(cmd) or check(flat)
+    message = check(cmd) or check(flat)
+    if message:
+        return message
+    if remote_host_flag(cmd):
+        return DB_MSG % "a database client pointed at a remote host"
+    return None
 
 
 def main():

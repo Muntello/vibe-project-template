@@ -8,6 +8,7 @@ Format: `## [YYYY-MM-DD] Summary` with bullet points for details.
 
 ## [2026-11-24] Bounded production reads and credential rules
 
+- Scope database host flags to the invoking command so local shell pipelines and SQLite output options work. Preserve PostgreSQL's JSON and JSONB text in diagnostic CSV exports.
 - `docs/DIAG_USER_SETUP.md`: PostgreSQL diagnostic reads use a single-statement dispatcher, a separate OS identity and an explicit database allowlist. Includes setup guidance for MySQL and ClickHouse role limits.
 - `docs/AGENT_SERVER_ACCESS.md`: queries go through `diag-sql`; query rules; an approved production change covers only the steps named.
 - `AGENTS.md`: rules 7 (production database reads) and 8 (credentials); the approval scope in rule 1. Server Access and Key Integrations compacted to stay near the size tripwire.

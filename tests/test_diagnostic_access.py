@@ -2,9 +2,11 @@
 
 import csv
 import io
+import json
 import os
 import runpy
 import unittest
+from decimal import Decimal
 from pathlib import Path
 
 import psycopg
@@ -30,6 +32,19 @@ class DiagnosticInputTests(unittest.TestCase):
                 self.assertIsNone(guard["verdict"](f"psql -h {host} -d test"))
         self.assertIsNotNone(guard["verdict"]("psql -h db.example.test -d test"))
 
+    def test_host_flags_belong_to_their_command(self):
+        for separator in (" && ", " || ", "; ", " | ", "\n"):
+            with self.subTest(separator=separator):
+                self.assertIsNone(guard["verdict"]("psql --version" + separator + "du -h ."))
+                self.assertIsNotNone(guard["verdict"]("ls -lh" + separator + "psql -h db.example.test"))
+        self.assertIsNone(guard["verdict"]("psql --version && ls -lh"))
+        self.assertIsNone(guard["verdict"]('psql --version 2>&1 && du -h "$(pwd)"'))
+        self.assertIsNotNone(guard["verdict"]("""psql -c "SELECT 1;" -h db.example.test"""))
+
+    def test_local_sqlite_output_options(self):
+        self.assertIsNone(guard["verdict"]("""sqlite3 -header -csv :memory: 'SELECT 1 AS n'"""))
+        self.assertIsNotNone(guard["verdict"]("ssh diag@example.invalid sqlite3 -header test.db"))
+
 
 @unittest.skipUnless(os.environ.get("DIAG_TEST_DSN"), "set DIAG_TEST_DSN to a disposable PostgreSQL database")
 class PostgreSQLTests(unittest.TestCase):
@@ -48,6 +63,28 @@ class PostgreSQLTests(unittest.TestCase):
 
     def test_transaction_is_read_only(self):
         self.assertEqual(self.query("SELECT current_setting('transaction_read_only')")[1], ["on"])
+
+    def test_jsonb_in_csv(self):
+        rows = self.query("""
+            SELECT payload, payload::json AS as_json, id
+            FROM (VALUES
+                (1, '{"ok":true,"items":[false,null,"a,b","say \\"hi\\""]}'::jsonb),
+                (2, '"quoted, string"'::jsonb),
+                (3, '1234567890.12345678901234567890'::jsonb),
+                (4, 'null'::jsonb),
+                (5, NULL::jsonb)
+            ) AS sample(id, payload)
+            ORDER BY id
+        """)
+        self.assertEqual(rows[0], ["payload", "as_json", "id"])
+        self.assertEqual([row[2] for row in rows[1:]], ["1", "2", "3", "4", "5"])
+        self.assertEqual(rows[-1], ["", "", "5"])  # SQL NULL
+        for payload, as_json, _ in rows[1:]:
+            self.assertEqual(payload, as_json)
+        self.assertEqual([json.loads(row[0], parse_float=Decimal) for row in rows[1:-1]], [
+            {"ok": True, "items": [False, None, "a,b", 'say "hi"']},
+            "quoted, string", Decimal("1234567890.12345678901234567890"), None,
+        ])
 
     def test_server_timeout(self):
         with self.assertRaises(psycopg.errors.QueryCanceled):

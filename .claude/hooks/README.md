@@ -16,6 +16,9 @@ A Claude Code `PreToolUse` hook for the Bash tool. It refuses:
 
 On a match it exits 2 and the agent gets a message that says what to do instead.
 
+Database host flags are scoped to each command. Local checks such as `psql --version && du -h .` and
+`sqlite3 -header -csv :memory: 'SELECT 1'` are allowed.
+
 It reads only the command line. A command hidden inside a script the agent wrote first is not seen, so treat it as
 a guard against mistakes, not as a security boundary. The boundary is the database role and its limits.
 

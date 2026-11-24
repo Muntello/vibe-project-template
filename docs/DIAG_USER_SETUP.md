@@ -169,7 +169,7 @@ Needs SQL-driven access control on the server (`access_management` enabled for t
 
 ## 6b. Install the Query Wrapper
 
-The [PostgreSQL dispatcher](../deployment/diagnostics/diag-sql.py) accepts one SELECT or plain EXPLAIN on stdin. Its read-only transaction, statement timeout and rollback are separate from the submitted SQL. It returns CSV. Query-shape checks catch common mistakes; a valid SELECT can still be expensive. Use a read replica or separate resource controls when a shared server needs stronger workload isolation.
+The [PostgreSQL dispatcher](../deployment/diagnostics/diag-sql.py) accepts one SELECT or plain EXPLAIN on stdin. Its read-only transaction, statement timeout and rollback are separate from the submitted SQL. It returns CSV. JSON and JSONB columns contain PostgreSQL's JSON text, including the literal `null`. A SQL NULL produces an empty CSV field. Query-shape checks catch common mistakes; a valid SELECT can still be expensive. Use a read replica or separate resource controls when a shared server needs stronger workload isolation.
 
 Run the following as an administrator from the repository root. The example targets Debian/Ubuntu with Python 3, the venv module, sudo and a local PostgreSQL server. Create a locked OS service account named `diagnostic_user` with no interactive login. On an existing installation, reuse it only if it is already dedicated to this dispatcher.
 
