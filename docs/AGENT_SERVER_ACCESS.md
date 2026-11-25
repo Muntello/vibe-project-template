@@ -31,8 +31,9 @@ Two access modes exist for working with the production server. Choose the approp
 ssh -i ~/.ssh/{{DIAG_KEY_NAME}} diag@{{SERVER_HOST}}
 ```
 
-**User**: `diag` — no sudo, read-only access only.
-**Database role**: `diagnostic_user` — SELECT-only on all project databases.
+**User**: `diag` — read-only diagnostics. The sole sudo delegation runs the PostgreSQL dispatcher as its unprivileged service account.
+**Database role**: `diagnostic_user` — SELECT-only on configured project databases, with server-side limits, reached through
+the `diag-sql` wrapper.
 
 ### Available Actions
 
@@ -80,16 +81,28 @@ ps aux | grep -E "{{PROCESS_PATTERN}}" | grep -v grep
 
 #### Database Queries (SELECT Only)
 
+Every query goes through the `diag-sql` wrapper (`docs/DIAG_USER_SETUP.md`, section 6b), one query per call. Never
+run the database client directly, over ssh or otherwise: the wrapper is what applies the time and resource limits.
+
 ```bash
-# PostgreSQL
-psql -h localhost -U diagnostic_user -d {{DB_NAME}}
-
-# MySQL
-# mysql -h localhost -u diagnostic_user -p {{DB_NAME}}
-
-# MongoDB (read-only role)
-# mongosh --host localhost -u diagnostic_user -p --authenticationDatabase admin {{DB_NAME}}
+ssh -i ~/.ssh/{{DIAG_KEY_NAME}} diag@{{SERVER_HOST}} diag-sql < query.sql
+# For a second configured database, pass its name explicitly.
+ssh -i ~/.ssh/{{DIAG_KEY_NAME}} diag@{{SERVER_HOST}} diag-sql {{DB_NAME}} < query.sql
 ```
+
+**Query rules.** A read-only query can still overload the database for everyone:
+
+- Filter on indexed columns, by an exact value or a prefix (`LIKE 'abc%'`). No leading-wildcard `LIKE`, no regex,
+  no cast of a JSON or text column to search inside it across a table. Extract JSON keys with `->>`.
+- Bound every query on a large table by a time window on an indexed column. Start with one day and widen only
+  when the answer needs it.
+- `LIMIT` every query that does not aggregate. Ask one question per query and keep the query next to its output.
+- Check the plan with `EXPLAIN` when unsure. Not `EXPLAIN ANALYZE`: it runs the query.
+- Columnar engines (ClickHouse and similar): always filter on the partition or time key; no `FINAL` and no exact
+  distinct counts on large tables. Use approximate counts, and collapse rows in the query instead of `FINAL`.
+- A query that really needs a full scan is written down and handed to the user, who decides whether to run it
+  off-peak or add an index.
+- A refusal from the wrapper or a hit limit is a boundary: rewrite the query, do not look for a way around it.
 
 **Useful diagnostic queries (PostgreSQL):**
 
@@ -104,7 +117,7 @@ ORDER BY pg_relation_size(oid) DESC LIMIT 20;
 SELECT datname, usename, state, query_start, query
 FROM pg_stat_activity
 WHERE datname = '{{DB_NAME}}'
-ORDER BY query_start DESC;
+ORDER BY query_start DESC LIMIT 20;
 
 -- Database health
 SELECT datname, numbackends, xact_commit, xact_rollback, deadlocks
@@ -131,7 +144,7 @@ ss -tlnp | grep -E "{{PORT_PATTERN}}"
 ### Restrictions in Diagnostic Mode
 
 **You CANNOT and MUST NOT attempt to:**
-- Run `sudo` anything — it will be denied
+- Use administrative sudo. The diagnostic dispatcher is the only delegated command.
 - Modify or delete files
 - Restart services
 - Run application CLI commands (no access to app runtime)
@@ -160,6 +173,10 @@ ssh -i ~/.ssh/{{DEPLOY_KEY_NAME}} {{DEPLOY_USER}}@{{SERVER_HOST}}
 2. **Ask before acting** — "Should I [action] on production?" and wait for "yes"
 3. **SSH failures** — check credentials after an authentication failure. During an approved reboot, use the bounded reconnect procedure in [the project rules](../AGENTS.md#2-ssh-connection-failures).
 4. **Infrastructure operations** — provide step-by-step instructions, let user execute
+5. **Approved means that change only** — write the steps down before asking (host, file, exact change, how to
+   check it). After the yes, run exactly those steps. A check or fix you think of on the way goes back to the user
+   first. If a precondition is not met, stop and report.
+6. **Database reads still go through `diag-sql`**, also while you hold this access.
 
 ### Available Actions (read-only, no permission needed)
 
@@ -170,14 +187,9 @@ Everything from Diagnostic Mode, plus:
 cd {{APP_PATH}}
 # Activate environment (virtualenv, nvm, etc.) if needed
 
-# Read configuration
-cat {{APP_PATH}}/.env
-cat /etc/systemd/system/{{SERVICE_NAME}}.service
-# cat {{APP_PATH}}/docker-compose.yml
-
-# Cache/broker inspection
-# redis-cli INFO
-# redis-cli DBSIZE
+# Inspect service state and the location of its configuration
+systemctl show {{SERVICE_NAME}} -p ActiveState -p SubState
+systemctl show {{SERVICE_NAME}} -p FragmentPath
 ```
 
 ### Actions Requiring Explicit User Permission
@@ -222,10 +234,9 @@ grep " 500 " /var/log/nginx/{{NGINX_LOG_PREFIX}}-access.log | tail -20
 
 ### "Is the database healthy?"
 ```bash
-psql -h localhost -U diagnostic_user -d {{DB_NAME}} -c "
-  SELECT datname, numbackends, xact_commit, xact_rollback, deadlocks
-  FROM pg_stat_database WHERE datname = '{{DB_NAME}}';
-"
+echo "SELECT datname, numbackends, xact_commit, xact_rollback, deadlocks
+      FROM pg_stat_database WHERE datname = '{{DB_NAME}}';" \
+  | ssh -i ~/.ssh/{{DIAG_KEY_NAME}} diag@{{SERVER_HOST}} diag-sql
 ```
 
 ### "Disk space issue?"
